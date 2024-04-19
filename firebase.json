@@ -1,0 +1,25 @@
+{
+  "emulators": {
+    "firestore": {
+      "host": "localhost",
+      "port": 6996
+    }
+  },
+  "firestore": {
+    "rules": "firestore",
+    "indexes": "firestore.indexes"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ],
+      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run lint"]
+    }
+  ]
+}
