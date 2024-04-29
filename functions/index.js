@@ -3,25 +3,26 @@ const { onRequest } = require('firebase-functions/v2/https')
 // const { onDocumentCreated } = require('firebase-functions/v2/firestore')
 
 const admin = require('firebase-admin')
+const { getAuth } = require('firebase-admin/auth')
 const { getFirestore } = require('firebase-admin/firestore')
 const { setGlobalOptions } = require('firebase-functions/v2')
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() })
 setGlobalOptions({ maxInstances: 10 })
 
-exports.addAccount = onRequest(async (req, res) => {
+exports.createAccountInFirestore = onRequest(async (req, res) => {
   const account = req.body
   const collectionRef = getFirestore().collection('accounts')
 
   await collectionRef
-    .doc(account.username)
+    .doc(account.email)
     .get() // check if account existed
     .then((result) => {
       if (!result.exists) {
       // Add account if not existed
         collectionRef
-          .doc(account.username).set(account)
-        updateToken(account.username, account.token)
+          .doc(account.email).set(account)
+        updateToken(account.email, account.token)
         res.json({
           success: true,
           targetAccount: account,
@@ -31,7 +32,7 @@ exports.addAccount = onRequest(async (req, res) => {
         res.json({
           success: false,
           targetAccount: null,
-          error: 'Username đã tồn tại!'
+          error: 'Email đã tồn tại!'
         })
       }
     })
@@ -44,20 +45,52 @@ exports.addAccount = onRequest(async (req, res) => {
     })
 })
 
+exports.getCurrentAccount = onRequest(async (req, res) => {
+  const account = req.body
+
+  try {
+    const authResult = await getAuth().getUserByEmail(account.email)
+    // Nếu tài khoản tồn tại, thì kiểm tra mật khẩu và lấy dữ liệu về account
+    const docRef = getFirestore()
+      .collection('accounts')
+      .doc(account.email)
+
+    await docRef
+      .get()
+      .then((result) => {
+        if (result.exists) {
+          const targetAccount = result.data()
+          updateToken(account.email, account.token)
+          targetAccount.token = account.token
+          delete targetAccount.password
+          res.json(targetAccount)
+        } else {
+          // Có trong authentication nhưng không có trong firestore -> Xóa trong authentication đi
+          getAuth().deleteUser(authResult.uid)
+          res.json(null)
+        }
+      })
+      .catch(() => {
+        res.json(null)
+      })
+  } catch (error) {
+    res.json(null)
+  }
+})
+
 exports.updateAccount = onRequest(async (req, res) => {
   const account = req.body
   const collectionRef = getFirestore().collection('accounts')
 
   await collectionRef
-    .doc(account.username)
+    .doc(account.email)
     .update({
       displayName: account.displayName,
-      email: account.email,
       age: account.age
     })
     .then((result) => {
-      collectionRef.doc(account.username).set(account)
-      updateToken(account.username, account.token)
+      collectionRef.doc(account.email).set(account)
+      updateToken(account.email, account.token)
       res.json({
         success: true,
         error: null
@@ -66,7 +99,7 @@ exports.updateAccount = onRequest(async (req, res) => {
     .catch(() => {
       res.json({
         success: false,
-        error: `Tài khoản với username "${account.username}" không tồn tại!`
+        error: `Tài khoản với email "${account.email}" không tồn tại!`
       })
     })
 })
@@ -76,7 +109,7 @@ exports.updateAccount = onRequest(async (req, res) => {
  * @param {string} token token to update
  */
 
-async function updateToken (username, token) {
+async function updateToken (email, token) {
   const timestamp = Math.floor(Date.now() / 1000)
   const tokenObject = {
     token: token,
@@ -84,36 +117,9 @@ async function updateToken (username, token) {
   }
   await getFirestore()
     .collection('tokens')
-    .doc(username)
+    .doc(email)
     .set(tokenObject)
 }
-
-exports.login = onRequest(async (req, res) => {
-  const account = req.body
-  const docRef = getFirestore()
-    .collection('accounts')
-    .doc(account.username)
-
-  await docRef
-    .get()
-    .then((result) => {
-      if (result.exists) {
-        const targetAccount = result.data()
-        if (targetAccount.password === account.password) {
-          updateToken(account.username, account.token)
-          targetAccount.token = account.token
-          res.json(targetAccount)
-        } else {
-          res.json(null)
-        }
-      } else {
-        res.json(null)
-      }
-    })
-    .catch(() => {
-      res.json(null)
-    })
-})
 
 exports.addMessage = onRequest(async (req, res) => {
   const msg = req.query.text
