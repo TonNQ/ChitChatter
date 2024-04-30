@@ -1,3 +1,8 @@
+/* eslint-disable no-invalid-this */
+const { formatTimestamp, parseDateString } = require('./utils/utils')
+const { getAllAccounts } = require('./modules/accounts')
+
+// Firebase
 const { onRequest } = require('firebase-functions/v2/https')
 // const logger = require('firebase-functions/logger')
 // const { onDocumentCreated } = require('firebase-functions/v2/firestore')
@@ -55,3 +60,46 @@ async function sendNotification(body) {
       console.log('failed', error)
     })
 }
+
+exports.getAllAccounts = async function () {
+  const accounts = await getFirestore().collection('accounts').get()
+  const data = []
+  accounts.forEach((account) => {
+    data.push(account.data())
+  })
+  return data
+}
+
+exports.getAllLastMessages = onRequest(async (req, res) => {
+  const currentAccount = req.query.email
+  const data = {}
+  try {
+    const messages = await getFirestore().collection('messages').orderBy('createdAt', 'desc').get()
+    const accounts = await getAllAccounts()
+    messages.forEach((message) => {
+      const messageData = message.data()
+      const { createdAt, sender, receiver, content, image } = messageData
+      if (sender === currentAccount || receiver === currentAccount) {
+        const pairKey = [sender, receiver].sort().join('_')
+        if (!data[pairKey] || createdAt.toDate() > parseDateString(data[pairKey].createdAt)) {
+          data[pairKey] = {
+            id: message.id,
+            createdAt: formatTimestamp(createdAt),
+            sender,
+            receiver,
+            content,
+            image,
+            name:
+              sender !== currentAccount
+                ? accounts.find((account) => account.email === sender).displayName
+                : accounts.find((account) => account.email === receiver).displayName
+          }
+        }
+      }
+    })
+    res.json({ success: true, data: Object.values(data), error: null })
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
