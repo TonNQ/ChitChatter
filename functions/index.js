@@ -55,3 +55,38 @@ async function sendNotification(body) {
       console.log('failed', error)
     })
 }
+
+exports.getAllContacts = onRequest(async (req, res) => {
+  const email = req.query.email
+  try {
+    const currentAccount = await getFirestore().collection('accounts').doc(email).get()
+
+    if (!currentAccount.exists) {
+      return res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại' })
+    }
+
+    const contacts = currentAccount.data().contacts
+    res.json({ success: true, data: { contacts }, error: null })
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
+
+exports.getInfomationOfUser = onRequest(async (req, res) => {
+  const email = req.query.email
+  try {
+    const account = await getFirestore().collection('accounts').doc(email).get()
+
+    if (!account.exists) {
+      return res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại' })
+    }
+
+    const data = account.data()
+    res.json({ success: true, data, error: null })
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
+
