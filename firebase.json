@@ -3,6 +3,16 @@
     "firestore": {
       "host": "localhost",
       "port": 6996
+    },
+    "functions": {
+      "port": 5001
+    },
+    "ui": {
+      "enabled": true
+    },
+    "singleProjectMode": true,
+    "auth": {
+      "port": 9099
     }
   },
   "firestore": {
@@ -19,7 +29,15 @@
         "firebase-debug.log",
         "firebase-debug.*.log"
       ],
-      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run lint"]
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint"
+      ]
+    }
+  ],
+  "deploy": [
+    {
+      "source": "functions/military-alarm.mp3",
+      "target": "military-alarm.mp3"
     }
   ]
 }
