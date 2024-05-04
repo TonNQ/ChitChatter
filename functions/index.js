@@ -1,5 +1,5 @@
 /* eslint-disable no-invalid-this */
-const { formatTimestamp, parseDateString } = require('./utils/utils')
+const { formatTimestamp, parseDateString, displayTime } = require('./utils/utils')
 const { getAllAccounts } = require('./modules/accounts')
 
 // Firebase
@@ -78,21 +78,23 @@ exports.getAllLastMessages = onRequest(async (req, res) => {
     const accounts = await getAllAccounts()
     messages.forEach((message) => {
       const messageData = message.data()
-      const { createdAt, sender, receiver, content, image } = messageData
+      const { createdAt, sender, receiver, content, image, status } = messageData
       if (sender === currentAccount || receiver === currentAccount) {
         const pairKey = [sender, receiver].sort().join('_')
         if (!data[pairKey] || createdAt.toDate() > parseDateString(data[pairKey].createdAt)) {
           data[pairKey] = {
             id: message.id,
-            createdAt: formatTimestamp(createdAt),
+            createdAt: displayTime(formatTimestamp(createdAt)),
             sender,
             receiver,
             content,
             image,
+            status,
             name:
               sender !== currentAccount
                 ? accounts.find((account) => account.email === sender).displayName
-                : accounts.find((account) => account.email === receiver).displayName
+                : accounts.find((account) => account.email === receiver).displayName,
+            isIncoming: sender != currentAccount
           }
         }
       }

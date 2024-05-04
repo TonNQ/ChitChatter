@@ -1,4 +1,6 @@
 /* eslint-disable require-jsdoc */
+const moment = require('moment')
+
 function formatTimestamp(timestamp) {
   const date = new Date(timestamp._seconds * 1000 + timestamp._nanoseconds / 1000000)
 
@@ -27,7 +29,28 @@ function parseDateString(timestamp) {
   return date
 }
 
+// 04/05/2024 10:18:14
+// kiểm tra xem nếu nó cùng ngày với giờ hiện tại thì in ra giờ dưới dạng như 10:18 AM
+// nếu khác ngày thì in ra ngày dưới dạng May 04
+function displayTime(time) {
+  const dateFormat = 'DD/MM/YYYY HH:mm:ss'
+
+  // Chuyển đổi chuỗi ngày thành đối tượng moment
+  const inputDateTime = moment(time, dateFormat)
+
+  // Lấy ngày và giờ hiện tại
+  const currentDateTime = moment()
+
+  // So sánh ngày giờ
+  if (inputDateTime.isSame(currentDateTime, 'day')) {
+    return inputDateTime.format('hh:mm A')
+  } else {
+    return inputDateTime.format('MMM DD')
+  }
+}
+
 module.exports = {
   formatTimestamp,
-  parseDateString
+  parseDateString,
+  displayTime
 }
