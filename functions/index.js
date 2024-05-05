@@ -1,7 +1,7 @@
 const { onRequest } = require('firebase-functions/v2/https')
 // const logger = require('firebase-functions/logger')
 // const { onDocumentCreated } = require('firebase-functions/v2/firestore')
-
+const formatTimestamp = require('./utils/utils')
 const admin = require('firebase-admin')
 const { getFirestore } = require('firebase-admin/firestore')
 const { setGlobalOptions } = require('firebase-functions/v2')
@@ -47,7 +47,10 @@ exports.getChat = onRequest(async (req, res) => {
     .get()
   const messages = []
   snapshot.forEach((doc) => {
-    messages.push(doc.data())
+    const message = doc.data()
+    const formattedTime = formatTimestamp(message.createdAt)
+    message.formattedTime = formattedTime
+    messages.push(message)
   })
   res.json(messages)
 })
