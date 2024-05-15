@@ -1,3 +1,4 @@
+/* eslint-disable require-jsdoc */
 /* eslint-disable no-invalid-this */
 const { formatTimestamp, parseDateString, displayTime } = require('./utils/utils')
 const { getAllAccounts } = require('./modules/accounts')
@@ -24,9 +25,8 @@ exports.createAccountInFirestore = onRequest(async (req, res) => {
     .get() // check if account existed
     .then((result) => {
       if (!result.exists) {
-      // Add account if not existed
-        collectionRef
-          .doc(account.email).set(account)
+        // Add account if not existed
+        collectionRef.doc(account.email).set(account)
         updateToken(account.email, account.token)
         res.json({
           success: true,
@@ -56,9 +56,7 @@ exports.getCurrentAccount = onRequest(async (req, res) => {
   try {
     const authResult = await getAuth().getUserByEmail(account.email)
     // Nếu tài khoản tồn tại, thì kiểm tra mật khẩu và lấy dữ liệu về account
-    const docRef = getFirestore()
-      .collection('accounts')
-      .doc(account.email)
+    const docRef = getFirestore().collection('accounts').doc(account.email)
 
     await docRef
       .get()
@@ -114,16 +112,13 @@ exports.updateAccount = onRequest(async (req, res) => {
  * @param {string} token token to update
  */
 
-async function updateToken (email, token) {
+async function updateToken(email, token) {
   const timestamp = Math.floor(Date.now() / 1000)
   const tokenObject = {
     token: token,
     timestamp: timestamp
   }
-  await getFirestore()
-    .collection('tokens')
-    .doc(email)
-    .set(tokenObject)
+  await getFirestore().collection('tokens').doc(email).set(tokenObject)
 }
 
 exports.addMessage = onRequest(async (req, res) => {
@@ -146,7 +141,7 @@ exports.sendMessage = onRequest(async (req, res) => {
  * Send notification to user
  * @param {Object} body
  */
-async function sendNotification (body) {
+async function sendNotification(body) {
   const token = body.token
   const message = {
     token: token,
@@ -190,7 +185,7 @@ exports.getAllLastMessages = onRequest(async (req, res) => {
     const accounts = await getAllAccounts()
     messages.forEach((message) => {
       const messageData = message.data()
-      const { createdAt, sender, receiver, content, image, status } = messageData
+      const { createdAt, sender, receiver, content, status } = messageData
       if (sender === currentAccount || receiver === currentAccount) {
         const pairKey = [sender, receiver].sort().join('_')
         if (!data[pairKey] || createdAt.toDate() > parseDateString(data[pairKey].createdAt)) {
@@ -200,13 +195,16 @@ exports.getAllLastMessages = onRequest(async (req, res) => {
             sender,
             receiver,
             content,
-            image,
             status,
             name:
               sender !== currentAccount
                 ? accounts.find((account) => account.email === sender).displayName
                 : accounts.find((account) => account.email === receiver).displayName,
-            isIncoming: sender != currentAccount
+            isIncoming: sender != currentAccount,
+            url:
+              sender !== currentAccount
+                ? accounts.find((account) => account.email === sender).imageUrl
+                : accounts.find((account) => account.email === receiver).imageUrl
           }
         }
       }
