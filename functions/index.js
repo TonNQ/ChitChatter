@@ -1,11 +1,11 @@
 const { onRequest } = require('firebase-functions/v2/https')
 // const logger = require('firebase-functions/logger')
 // const { onDocumentCreated } = require('firebase-functions/v2/firestore')
-
+const formatTimestamp = require('./utils/utils')
 const admin = require('firebase-admin')
 const { getFirestore } = require('firebase-admin/firestore')
 const { setGlobalOptions } = require('firebase-functions/v2')
-
+const { Filter } = require('firebase-admin/firestore')
 admin.initializeApp({ credential: admin.credential.applicationDefault() })
 setGlobalOptions({ maxInstances: 10 })
 
@@ -25,24 +25,67 @@ exports.sendMessage = onRequest(async (req, res) => {
   })
 })
 
+exports.getChat = onRequest(async (req, res) => {
+  const sender = req.query.sender
+  const receiver = req.query.receiver
+  const messageRef = getFirestore().collection('messages')
+  const snapshot = await messageRef
+    .where(
+      Filter.or(
+        Filter.where('sender', '==', sender),
+        Filter.where('sender', '==', receiver)
+      )
+    )
+    .where(
+      Filter.or(
+        Filter.where('receiver', '==', sender),
+        Filter.where('receiver', '==', receiver)
+      )
+    )
+    .orderBy('createdAt', 'desc')
+    .limit(100)
+    .get()
+  const messages = []
+  snapshot.forEach((doc) => {
+    const message = doc.data()
+    const formattedTime = formatTimestamp(message.createdAt)
+    message.formattedTime = formattedTime
+    messages.push(message)
+  })
+  res.json(messages)
+})
+
+exports.sendMessage = onRequest(async (req, res) => {
+  const message = req.body
+  await getFirestore()
+    .collection('messages')
+    .add(message)
+  await sendNotification(message)
+  res.json({
+    success: true,
+    error: null
+  })
+})
 /**
  * Send notification to user
  * @param {Object} body
  */
-async function sendNotification(body) {
+async function sendNotification (body) {
   const token = body.token
+  const photoUrl = body.data.photoUrl
+  const photoMimeType = body.data.photoMimeType
   const message = {
     token: token,
     data: {
       text: body.data.text,
-      photoUri: body.data.photoUri,
-      photoMimeType: body.data.photoMimeType,
+      photoUrl: photoUrl == null ? 'null' : photoUrl,
+      photoMimeType: photoMimeType == null ? 'null' : photoMimeType,
       sender: body.data.sender,
       receiver: body.data.receiver
     },
     notification: {
       title: body.notification.title,
-      body: body.notification.body
+      body: body.notification.body == null ? 'null' : body.notification.body
     }
   }
   admin
