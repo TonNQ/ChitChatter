@@ -188,10 +188,10 @@ exports.getAllLastMessages = onRequest(async (req, res) => {
       const { createdAt, sender, receiver, content, status } = messageData
       if (sender === currentAccount || receiver === currentAccount) {
         const pairKey = [sender, receiver].sort().join('_')
-        if (!data[pairKey] || createdAt.toDate() > parseDateString(data[pairKey].createdAt)) {
+        if (!data[pairKey] || createdAt.toDate() > parseDateString(data[pairKey].formattedTime)) {
           data[pairKey] = {
             id: message.id,
-            createdAt: displayTime(formatTimestamp(createdAt)),
+            formattedTime: displayTime(formatTimestamp(createdAt)),
             sender,
             receiver,
             content,
