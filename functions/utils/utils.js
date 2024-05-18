@@ -1,7 +1,7 @@
 /* eslint-disable require-jsdoc */
 const moment = require('moment')
 
-function formatTimestamp(timestamp) {
+function formatTimestamp (timestamp) {
   const date = new Date(timestamp._seconds * 1000 + timestamp._nanoseconds / 1000000)
 
   const year = date.getFullYear()
@@ -18,7 +18,7 @@ function formatTimestamp(timestamp) {
 }
 
 // Hàm chuyển đổi chuỗi timestamp sang đối tượng Date
-function parseDateString(timestamp) {
+function parseDateString (timestamp) {
   const [datePart, timePart] = timestamp.split(' ') // Tách phần ngày và phần giờ
   const [day, month, year] = datePart.split('/') // Tách ngày, tháng, năm
   const [hours, minutes, seconds] = timePart.split(':') // Tách giờ, phút, giây
@@ -32,7 +32,7 @@ function parseDateString(timestamp) {
 // 04/05/2024 10:18:14
 // kiểm tra xem nếu nó cùng ngày với giờ hiện tại thì in ra giờ dưới dạng như 10:18 AM
 // nếu khác ngày thì in ra ngày dưới dạng May 04
-function displayTime(time) {
+function displayTime (time) {
   const dateFormat = 'DD/MM/YYYY HH:mm:ss'
 
   // Chuyển đổi chuỗi ngày thành đối tượng moment

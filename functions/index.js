@@ -112,7 +112,7 @@ exports.updateAccount = onRequest(async (req, res) => {
  * @param {string} token token to update
  */
 
-async function updateToken(email, token) {
+async function updateToken (email, token) {
   const timestamp = Math.floor(Date.now() / 1000)
   const tokenObject = {
     token: token,
@@ -122,52 +122,76 @@ async function updateToken(email, token) {
 }
 
 exports.addMessage = onRequest(async (req, res) => {
-  const msg = req.query.text
-  const result = await getFirestore().collection('messages').add({ message: msg })
-  res.json({ result: `MessageId: ${result.id}` })
+  const { content, sender, receiver, status } = req.body
+  if (!content || !sender || !receiver || status === undefined) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+  const message = {
+    content,
+    sender,
+    receiver,
+    status,
+    createdAt: admin.firestore.Timestamp.now()
+  }
+  try {
+    const result = await getFirestore().collection('messages').add(message)
+    res.json({ result: `MessageId: ${result.id}` })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
 })
 
 exports.sendMessage = onRequest(async (req, res) => {
-  const message = req.body
-  await getFirestore().collection('messages').add(message)
-  await sendNotification(message)
-  res.json({
-    success: true,
-    error: null
-  })
+  // const { content, sender, receiver, status, token, notification } = req.body
+  const { content, sender, receiver, status } = req.body
+  if (!content || !sender || !receiver || status === undefined) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+  const message = {
+    content,
+    sender,
+    receiver,
+    status,
+    createdAt: admin.firestore.Timestamp.now()
+  }
+  try {
+    await getFirestore().collection('messages').add(message)
+    await sendNotification(message)
+    res.json({ success: true, error: null })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
 })
 
 /**
  * Send notification to user
  * @param {Object} body
  */
-async function sendNotification(body) {
+async function sendNotification (body) {
   const token = body.token
+  const photoUrl = body.data.photoUrl
+  const photoMimeType = body.data.photoMimeType
   const message = {
     token: token,
     data: {
       text: body.data.text,
-      photoUri: body.data.photoUri,
-      photoMimeType: body.data.photoMimeType,
+      photoUrl: photoUrl == null ? 'null' : photoUrl,
+      photoMimeType: photoMimeType == null ? 'null' : photoMimeType,
       sender: body.data.sender,
       receiver: body.data.receiver
     },
     notification: {
       title: body.notification.title,
-      body: body.notification.body
+      body: body.notification.body == null ? 'null' : body.notification.body
     }
   }
-  admin
-    .messaging()
-    .send(message)
-    .then((response) => {
-      console.log('success', response)
-    })
-    .catch((error) => {
-      console.log('failed', error)
-    })
+  try {
+    const response = await admin.messaging().send(message)
+    console.log('Notification sent successfully:', response)
+  } catch (error) {
+    console.log('Error sending notification:', error)
+  }
 }
-
 exports.getAllAccounts = async function () {
   const accounts = await getFirestore().collection('accounts').get()
   const data = []
@@ -200,7 +224,7 @@ exports.getAllLastMessages = onRequest(async (req, res) => {
               sender !== currentAccount
                 ? accounts.find((account) => account.email === sender).displayName
                 : accounts.find((account) => account.email === receiver).displayName,
-            isIncoming: sender != currentAccount,
+            isIncoming: sender !== currentAccount,
             url:
               sender !== currentAccount
                 ? accounts.find((account) => account.email === sender).imageUrl
