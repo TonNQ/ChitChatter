@@ -208,6 +208,52 @@ exports.getAllAccounts = async function () {
   return data
 }
 
+exports.getContactsOfAccount = onRequest(async (req, res) => {
+  const email = req.query.email
+  const token = req.query.token
+
+  try {
+    const isTokenValid = await checkToken(email, token)
+    if (isTokenValid) {
+      const userDoc = await getFirestore().collection('accounts').doc(email).get()
+      const contacts = userDoc.data().contacts
+
+      const data = []
+      // Get all contacts unique
+      for (const contactEmail of contacts) {
+        if (!data.includes(contactEmail)) {
+          const contactInfo = await getContactInfo(contactEmail)
+          if (contactInfo !== null) {
+            data.push({ email: contactEmail, displayName: contactInfo.displayName, imageUrl: contactInfo.imageUrl })
+          }
+        }
+      }
+
+      res.status(200).json({ success: true, data: data, error: null })
+    } else {
+      res.status(401).json({ success: false, data: null, error: 'Token is invalid' })
+    }
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
+
+async function getContactInfo(email) {
+  try {
+    const accountDoc = await getFirestore().collection('accounts').doc(email).get()
+    if (accountDoc.exists) {
+      const account = accountDoc.data()
+      return account
+    } else {
+      return null
+    }
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    return null
+  }
+}
+
 exports.getAllLastMessages = onRequest(async (req, res) => {
   const currentAccount = req.query.email
   const data = {}
@@ -246,3 +292,18 @@ exports.getAllLastMessages = onRequest(async (req, res) => {
     res.status(500).json({ success: false, data: null, error: 'Internal server error' })
   }
 })
+
+async function checkToken(email, token) {
+  try {
+    const accountDoc = await getFirestore().collection('accounts').doc(email).get()
+    if (accountDoc.exists) {
+      const tokens = accountDoc.data().tokens
+      const tokenObj = tokens.find((tokenObj) => tokenObj.token === token)
+      return tokenObj ? true : false
+    }
+    return false
+  } catch (error) {
+    console.error('Error in checkToken:', error)
+    return false
+  }
+}
