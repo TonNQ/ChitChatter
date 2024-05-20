@@ -84,6 +84,32 @@ exports.getCurrentAccount = onRequest(async (req, res) => {
   }
 })
 
+exports.getAccountByEmail = onRequest(async (req, res) => {
+  const email = req.query.email
+
+  try {
+    const docRef = getFirestore().collection('accounts').doc(email)
+    await docRef
+      .get()
+      .then((result) => {
+        if (result.exists) {
+          console.log('Account found in firestore')
+          const targetAccount = result.data()
+          res.status(200).json({ success: true, data: targetAccount, error: null })
+        } else {
+          res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại!' })
+        }
+      })
+      .catch(() => {
+        console.log('Error while fetching account' + error)
+        res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại!' })
+      })
+  } catch (error) {
+    console.log('Account not found in authentication' + error)
+    res.status(500).json({ success: false, data: null, error: 'Lỗi server!' })
+  }
+})
+
 exports.updateAccount = onRequest(async (req, res) => {
   const account = req.body
   const collectionRef = getFirestore().collection('accounts')
