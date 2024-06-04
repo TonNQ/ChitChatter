@@ -140,14 +140,18 @@ async function updateToken(email, token) {
   await getFirestore().collection('tokens').doc(email).set(tokenObject)
 }
 
-exports.addMessage = onRequest(async (req, res) => {
-  const msg = req.query.text
-  const result = await getFirestore().collection('messages').add({ message: msg })
-  res.json({ result: `MessageId: ${result.id}` })
-})
-
 const sendMessageToRealtimeDb = async (message) => {
   try {
+    message.formattedTime = displayTime(message.createdAt)
+    // const messageRef = getFirestore().collection('messages')
+    // const snapshot = await messageRef
+    //   .where(Filter.or(Filter.where('sender', '==', message.sender), Filter.where('sender', '==', message.receiver)))
+    //   .where(
+    //     Filter.or(Filter.where('receiver', '==', message.sender), Filter.where('receiver', '==', message.receiver))
+    //   )
+    //   .orderBy('createdAt', 'desc')
+    //   .limit(1)
+    //   .get()
     // Extract username from sender and receiver emails
     const senderUsername = message.sender.split('@')[0]
     const receiverUsername = message.receiver.split('@')[0]
@@ -157,7 +161,7 @@ const sendMessageToRealtimeDb = async (message) => {
     const sanitizedReceiver = receiverUsername
 
     // Construct the path for the message
-    const messagePath = `messages/${sanitizedSender}/${sanitizedReceiver}`
+    const messagePath = `messages/${sanitizedReceiver}/${sanitizedSender}`
 
     // Reference to the database path
     const dbRef = ref(firebaseDb, messagePath)
@@ -195,7 +199,8 @@ exports.sendMessage = onRequest(async (req, res) => {
       console.log('Constructed message:', message)
 
       // Lưu tin nhắn vào Firestore
-      await getFirestore().collection('messages').add(message)
+      const firestoreDocRef = await getFirestore().collection('messages').add(message)
+      message.id = firestoreDocRef.id
       message.createdAt = formatTimestamp(new Date(message.createdAt))
 
       // Trả về mã trạng thái 200 trước khi gửi thông báo
@@ -243,27 +248,55 @@ exports.sendMessage = onRequest(async (req, res) => {
   }
 })
 
+async function getDisplayName(email) {
+  try {
+    // Lấy document snapshot từ Firestore
+    const senderDoc = await getFirestore().collection('accounts').doc(email).get()
+
+    // Kiểm tra nếu document tồn tại
+    if (senderDoc.exists) {
+      // Lấy dữ liệu từ document
+      const senderData = senderDoc.data()
+
+      // Lấy giá trị của trường displayName
+      const displayName = senderData.displayName
+      console.log('Display Name:', displayName)
+
+      return displayName
+    } else {
+      console.log('No such document!')
+      return null
+    }
+  } catch (error) {
+    console.error('Error getting document:', error)
+    return null
+  }
+}
+
 const sendNotification = async (tokens, data) => {
   try {
-    const message = {
-      notification: {
-        title: 'New message',
-        body: data.content
-      },
-      data: {
-        content: String(data.content),
-        sender: String(data.sender),
-        receiver: String(data.receiver),
-        photoUrl: String(data.photoUrl || ''),
-        photoMimeType: String(data.photoMimeType || ''),
-        createdAt: String(new Date().toISOString()),
-        status: String(1)
-      },
-      tokens: tokens
-    }
+    console.log('sender: ', data.sender)
+    getDisplayName(data.sender).then((displayName) => {
+      const message = {
+        notification: {
+          title: displayName,
+          body: data.content
+        },
+        data: {
+          content: String(data.content),
+          sender: String(data.sender),
+          receiver: String(data.receiver),
+          photoUrl: String(data.photoUrl || ''),
+          photoMimeType: String(data.photoMimeType || ''),
+          createdAt: String(new Date().toISOString()),
+          status: String(1)
+        },
+        tokens: tokens
+      }
 
-    await admin.messaging().sendEachForMulticast(message)
-    console.log('Notification sent successfully')
+      admin.messaging().sendEachForMulticast(message)
+      console.log('Notification sent successfully')
+    })
   } catch (error) {
     console.error('Error sending multicast message:', error)
   }
