@@ -525,7 +525,7 @@ exports.searchContacts = onRequest(async (req, res) => {
     const receivedContacts = await getFirestore().collection('request-contact').where('receiver', '==', email).get()
     const listReceived = receivedContacts.docs.map((doc) => doc.data().sender)
 
-    const listAccounts = [] // Danh sách account tìm được
+    let listAccounts = [] // Danh sách account tìm được
     // Kiểm tra xem document ID có contains searchText không
     const accounts = await getFirestore().collection('accounts').get()
     accounts.forEach((contact) => {
@@ -553,8 +553,8 @@ exports.searchContacts = onRequest(async (req, res) => {
     })
 
     // sắp xếp listAccounts theo thứ tự enum CONTACT_STATUS
-    listAccounts.sort((a, b) => {
-      return CONTACT_STATUS[b.status] - CONTACT_STATUS[a.status]
+    listAccounts = listAccounts.sort((a, b) => {
+      return a.contactStatus - b.contactStatus
     })
     res.status(200).json({ success: true, data: listAccounts, error: null })
   } catch (error) {
