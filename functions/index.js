@@ -1,3 +1,4 @@
+/* eslint-disable import/default */
 /* eslint-disable require-jsdoc */
 /* eslint-disable no-invalid-this */
 const { formatTimestamp, parseDateString, displayTime } = require('./utils/utils')
@@ -5,16 +6,42 @@ const { getAllAccounts } = require('./modules/accounts')
 
 // Firebase
 const { onRequest } = require('firebase-functions/v2/https')
-// const logger = require('firebase-functions/logger')
-// const { onDocumentCreated } = require('firebase-functions/v2/firestore')
+
+
 const admin = require('firebase-admin')
 const { getAuth } = require('firebase-admin/auth')
-const { getFirestore, FieldValue } = require('firebase-admin/firestore')
+const { getFirestore, Filter, FieldValue } = require('firebase-admin/firestore')
+
+// const logger = require('firebase-functions/logger')
+// const { onDocumentCreated } = require('firebase-functions/v2/firestore')
+
 const { setGlobalOptions } = require('firebase-functions/v2')
 const { error } = require('firebase-functions/logger')
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() })
 setGlobalOptions({ maxInstances: 10 })
+
+
+const firestore = admin.firestore()
+firestore.settings({ ignoreUndefinedProperties: true })
+
+const { getDatabase, ref, set } = require('firebase/database')
+const { initializeApp } = require('firebase/app')
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyCS8iWccA0Vh0IWgirTxRzWYR8f3XDOCWo',
+  authDomain: 'chitchatter-b97bf.firebaseapp.com',
+  databaseURL: 'https://chitchatter-b97bf-default-rtdb.firebaseio.com',
+  projectId: 'chitchatter-b97bf',
+  storageBucket: 'chitchatter-b97bf.appspot.com',
+  messagingSenderId: '32426056104',
+  appId: '1:32426056104:web:58f3f2630f4a92b113659d',
+  measurementId: 'G-XFNPG8PBTC'
+}
+
+const app = initializeApp(firebaseConfig)
+const firebaseDb = getDatabase(app)
+
 
 // Tạo enum cho status
 const CONTACT_STATUS = {
@@ -23,6 +50,7 @@ const CONTACT_STATUS = {
   REQUESTED: 'REQUESTED', // Đã gửi yêu cầu kết bạn
   UNCONNECTED: 'UNCONNECTED'
 }
+
 
 exports.createAccountInFirestore = onRequest(async (req, res) => {
   const account = req.body
@@ -205,6 +233,41 @@ async function updateToken(email, token, isOnline) {
   } catch (error) {
     console.error('Error updating document:', error)
     throw new Error('Failed to add token')
+  }
+}
+
+
+const sendMessageToRealtimeDb = async (message) => {
+  try {
+    message.formattedTime = displayTime(message.createdAt)
+    // const messageRef = getFirestore().collection('messages')
+    // const snapshot = await messageRef
+    //   .where(Filter.or(Filter.where('sender', '==', message.sender), Filter.where('sender', '==', message.receiver)))
+    //   .where(
+    //     Filter.or(Filter.where('receiver', '==', message.sender), Filter.where('receiver', '==', message.receiver))
+    //   )
+    //   .orderBy('createdAt', 'desc')
+    //   .limit(1)
+    //   .get()
+    // Extract username from sender and receiver emails
+    const senderUsername = message.sender.split('@')[0]
+    const receiverUsername = message.receiver.split('@')[0]
+
+    // Sanitize extracted usernames for Firebase paths
+    const sanitizedSender = senderUsername
+    const sanitizedReceiver = receiverUsername
+
+    // Construct the path for the message
+    const messagePath = `messages/${sanitizedReceiver}/${sanitizedSender}`
+
+    // Reference to the database path
+    const dbRef = ref(firebaseDb, messagePath)
+
+    // Write the message to the Realtime Database
+    await set(dbRef, message)
+    console.log('Data written successfully')
+  } catch (error) {
+    console.error('Error writing data: ', error)
   }
 }
 
@@ -420,46 +483,165 @@ exports.addMessage = onRequest(async (req, res) => {
   res.json({ result: `MessageId: ${result.id}` })
 })
 
+
 exports.sendMessage = onRequest(async (req, res) => {
-  const message = req.body
-  await getFirestore().collection('messages').add(message)
-  await sendNotification(message)
-  res.json({
-    success: true,
-    error: null
-  })
+  let isSent = false
+  try {
+    const data = req.body
+    const isTokenValid = await checkToken(data.sender, data.token)
+    if (isTokenValid) {
+      const message = {
+        content: data.content || null,
+        sender: data.sender || null,
+        receiver: data.receiver || null,
+        photoUrl: data.photoUrl || null,
+        photoMimeType: data.photoMimeType || null,
+        createdAt: new Date(),
+        status: 1
+      }
+
+      // Kiểm tra các trường bắt buộc
+      if (!message.content || !message.sender || !message.receiver) {
+        res.status(400).json({ success: false, data: null, error: 'Thiếu các trường bắt buộc' })
+        return
+      }
+
+      console.log('Constructed message:', message)
+
+      // Lưu tin nhắn vào Firestore
+      const firestoreDocRef = await getFirestore().collection('messages').add(message)
+      message.id = firestoreDocRef.id
+      message.createdAt = formatTimestamp(new Date(message.createdAt))
+
+      // Trả về mã trạng thái 200 trước khi gửi thông báo
+      res.status(200).json({ success: true, data: message, error: null })
+      isSent = true
+
+      // Lấy các token FCM của người nhận
+      const receiverDoc = await getFirestore().collection('accounts').doc(message.receiver).get()
+      if (!receiverDoc.exists) {
+        console.error('Người nhận không tồn tại')
+        res.status(400).json({ success: false, data: null, error: 'Người nhận không tồn tại' })
+        return
+      }
+
+      const receiverData = receiverDoc.data()
+      const fcmTokens = receiverData.tokens || []
+
+      const isOnline = fcmTokens.some((token) => {
+        return typeof token.token === 'string' && token.token.trim() !== '' && token.isOnline
+      })
+      if (isOnline) {
+        sendMessageToRealtimeDb(message)
+      } else {
+        // Loại bỏ các token không hợp lệ
+        const validTokens = fcmTokens
+          .filter((token) => {
+            return typeof token.token === 'string' && token.token.trim() !== '' && !token.isOnline
+          })
+          .map((token) => token.token)
+
+        console.log(validTokens)
+        if (validTokens.length > 0) {
+          sendNotification(validTokens, data)
+        }
+      }
+    } else {
+      console.log('error token')
+      res.status(400).json({ success: false, data: null, error: 'Token không hợp lệ' })
+    }
+  } catch (error) {
+    console.error('Error:', error)
+    if (!isSent) {
+      res.status(500).json({ success: false, data: null, error: 'Lỗi máy chủ nội bộ' })
+    }
+  }
 })
+
+async function getDisplayName(email) {
+  try {
+    // Lấy document snapshot từ Firestore
+    const senderDoc = await getFirestore().collection('accounts').doc(email).get()
+
+    // Kiểm tra nếu document tồn tại
+    if (senderDoc.exists) {
+      // Lấy dữ liệu từ document
+      const senderData = senderDoc.data()
+
+      // Lấy giá trị của trường displayName
+      const displayName = senderData.displayName
+      console.log('Display Name:', displayName)
+
+      return displayName
+    } else {
+      console.log('No such document!')
+      return null
+    }
+  } catch (error) {
+    console.error('Error getting document:', error)
+    return null
+  }
+}
+
+const sendNotification = async (tokens, data) => {
+  try {
+    console.log('sender: ', data.sender)
+    getDisplayName(data.sender).then((displayName) => {
+      const message = {
+        notification: {
+          title: displayName,
+          body: data.content
+        },
+        data: {
+          content: String(data.content),
+          sender: String(data.sender),
+          receiver: String(data.receiver),
+          photoUrl: String(data.photoUrl || ''),
+          photoMimeType: String(data.photoMimeType || ''),
+          createdAt: String(new Date().toISOString()),
+          status: String(1)
+        },
+        tokens: tokens
+      }
+
+      admin.messaging().sendEachForMulticast(message)
+      console.log('Notification sent successfully')
+    })
+  } catch (error) {
+    console.error('Error sending multicast message:', error)
+  }
+}
 
 /**
  * Send notification to user
  * @param {Object} body
  */
-async function sendNotification(body) {
-  const token = body.token
-  const message = {
-    token: token,
-    data: {
-      text: body.data.text,
-      photoUri: body.data.photoUri,
-      photoMimeType: body.data.photoMimeType,
-      sender: body.data.sender,
-      receiver: body.data.receiver
-    },
-    notification: {
-      title: body.notification.title,
-      body: body.notification.body
-    }
-  }
-  admin
-    .messaging()
-    .send(message)
-    .then((response) => {
-      console.log('success', response)
-    })
-    .catch((error) => {
-      console.log('failed', error)
-    })
-}
+// async function sendNotification(body) {
+//   const token = body.token
+//   const message = {
+//     token: token,
+//     data: {
+//       text: body.data.text,
+//       photoUri: body.data.photoUri,
+//       photoMimeType: body.data.photoMimeType,
+//       sender: body.data.sender,
+//       receiver: body.data.receiver
+//     },
+//     notification: {
+//       title: body.notification.title,
+//       body: body.notification.body
+//     }
+//   }
+//   admin
+//     .messaging()
+//     .send(message)
+//     .then((response) => {
+//       console.log('success', response)
+//     })
+//     .catch((error) => {
+//       console.log('failed', error)
+//     })
+// }
 
 exports.getAllAccounts = async function () {
   const accounts = await getFirestore().collection('accounts').get()
@@ -469,6 +651,28 @@ exports.getAllAccounts = async function () {
   })
   return data
 }
+
+
+exports.getChat = onRequest(async (req, res) => {
+  const sender = req.query.sender
+  const receiver = req.query.receiver
+  const messageRef = getFirestore().collection('messages')
+  const snapshot = await messageRef
+    .where(Filter.or(Filter.where('sender', '==', sender), Filter.where('sender', '==', receiver)))
+    .where(Filter.or(Filter.where('receiver', '==', sender), Filter.where('receiver', '==', receiver)))
+    .orderBy('createdAt', 'desc')
+    .limit(100)
+    .get()
+  const messages = []
+  snapshot.forEach((doc) => {
+    const message = doc.data()
+    const formattedTime = formatTimestamp(message.createdAt)
+    message.formattedTime = formattedTime
+    messages.push(message)
+  })
+  res.json(messages)
+})
+
 
 exports.getContactsOfAccount = onRequest(async (req, res) => {
   const email = req.query.email
