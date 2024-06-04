@@ -233,6 +233,79 @@ exports.logout = onRequest(async (req, res) => {
   }
 })
 
+exports.addContact = onRequest(async (req, res) => {
+  const connection = req.body
+  const userEmail = connection.sender
+  const contactEmail = connection.receiver
+  const token = connection.token
+  console.log(token)
+
+  try {
+    const isTokenValid = await checkToken(userEmail, token)
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
+
+    const userDoc = await getFirestore().collection('accounts').doc(userEmail).get()
+    const contactDoc = await getFirestore().collection('accounts').doc(contactEmail).get()
+    const contacts = userDoc.data().contacts
+    if (contactDoc.exists) {
+      if (!contacts.includes(contactEmail)) {
+        const receivedDoc = await getFirestore().collection('request-contact').doc(`${contactEmail}_${userEmail}`).get()
+        if (receivedDoc.exists) {
+          res.status(400).json({ success: false, error: 'You have already received their request' })
+          return
+        }
+
+        await getFirestore().collection('request-contact').doc(`${userEmail}_${contactEmail}`).set({
+          sender: userEmail,
+          receiver: contactEmail,
+          time: FieldValue.serverTimestamp()
+        })
+        // Send notification to contact
+        const tokens = []
+        const tokensArray = contactDoc.data().tokens
+        tokensArray.forEach((tokenObj) => {
+          tokens.push(tokenObj.token)
+        })
+        sendContactRequest(userEmail, contactEmail, tokens)
+        res.status(200).json({ success: true, error: null })
+      } else {
+        res.status(400).json({ success: false, error: 'Contact already exists' })
+      }
+    } else {
+      res.status(404).json({ success: false, error: 'Contact not found' })
+    }
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, error: 'Internal server error' })
+  }
+})
+
+async function sendContactRequest(userEmail, contactEmail, tokens) {
+  const messages = {
+    tokens: tokens,
+    notification: {
+      title: 'Yêu cầu kết bạn',
+      body: `Bạn có yêu cầu kết bạn từ ${userEmail}`
+    }
+  }
+
+  try {
+    const response = await admin.messaging().sendEachForMulticast(messages)
+    response.responses.forEach((resp, idx) => {
+      if (resp.success) {
+        console.log(`Successfully sent message to token: ${tokens[idx]}`)
+      } else {
+        console.error(`Failed to send message to token: ${tokens[idx]} - ${resp.error}`)
+      }
+    })
+  } catch (error) {
+    console.error('Error sending multicast message:', error)
+  }
+}
+
 exports.addMessage = onRequest(async (req, res) => {
   const msg = req.query.text
   const result = await getFirestore().collection('messages').add({ message: msg })
