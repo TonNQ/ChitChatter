@@ -343,6 +343,40 @@ exports.acceptContact = onRequest(async (req, res) => {
   }
 })
 
+
+exports.rejectContact = onRequest(async (req, res) => {
+  const connection = req.body
+  const sender = connection.sender
+  const receiver = connection.receiver
+  const token = connection.token
+
+  try {
+    const isTokenValid = await checkToken(sender, token)
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
+
+    const requestDoc = await getFirestore().collection('request-contact').doc(`${sender}_${receiver}`).get()
+    const receivedDoc = await getFirestore().collection('request-contact').doc(`${receiver}_${sender}`).get()
+
+    if (requestDoc.exists || receivedDoc.exists) {
+      if (requestDoc.exists) {
+        await getFirestore().collection('request-contact').doc(`${sender}_${receiver}`).delete()
+      }
+      if (receivedDoc.exists) {
+        await getFirestore().collection('request-contact').doc(`${receiver}_${sender}`).delete()
+      }
+      res.status(200).json({ success: true, error: null })
+    } else {
+      res.status(404).json({ success: false, error: 'Request not found' })
+    }
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, error: 'Internal server error' })
+  }
+})
+
 exports.addMessage = onRequest(async (req, res) => {
   const msg = req.query.text
   const result = await getFirestore().collection('messages').add({ message: msg })
