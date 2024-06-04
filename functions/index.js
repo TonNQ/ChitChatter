@@ -7,10 +7,16 @@ const { getAllAccounts } = require('./modules/accounts')
 // Firebase
 const { onRequest } = require('firebase-functions/v2/https')
 
+
 const admin = require('firebase-admin')
 const { getAuth } = require('firebase-admin/auth')
-const { getFirestore, Filter } = require('firebase-admin/firestore')
+const { getFirestore, Filter, FieldValue } = require('firebase-admin/firestore')
+
+// const logger = require('firebase-functions/logger')
+// const { onDocumentCreated } = require('firebase-functions/v2/firestore')
+
 const { setGlobalOptions } = require('firebase-functions/v2')
+const { error } = require('firebase-functions/logger')
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() })
 setGlobalOptions({ maxInstances: 10 })
@@ -46,14 +52,13 @@ exports.createAccountInFirestore = onRequest(async (req, res) => {
       if (!result.exists) {
         // Add account if not existed
         collectionRef.doc(account.email).set(account)
-        updateToken(account.email, account.token)
-        res.json({
+        res.status(200).json({
           success: true,
           targetAccount: account,
           error: null
         })
       } else {
-        res.json({
+        res.status(200).json({
           success: false,
           targetAccount: null,
           error: 'Email đã tồn tại!'
@@ -61,7 +66,7 @@ exports.createAccountInFirestore = onRequest(async (req, res) => {
       }
     })
     .catch(() => {
-      res.json({
+      res.status(500).json({
         success: false,
         targetAccount: null,
         error: 'Có lỗi xảy ra trong khi đăng ký tài khoản của bạn!'
@@ -73,30 +78,60 @@ exports.getCurrentAccount = onRequest(async (req, res) => {
   const account = req.body
 
   try {
+    console.log(account.email)
     const authResult = await getAuth().getUserByEmail(account.email)
     // Nếu tài khoản tồn tại, thì kiểm tra mật khẩu và lấy dữ liệu về account
     const docRef = getFirestore().collection('accounts').doc(account.email)
+    await docRef
+      .get()
+      .then((result) => {
+        // Nếu tài khoản tồn tại trong firestore
+        if (result.exists) {
+          console.log('Account found in firestore')
+          updateToken(account.email, account.token, true)
+          const targetAccount = result.data()
+          delete targetAccount.password
+          res.status(200).json(targetAccount)
+        } else {
+          // Có trong authentication nhưng không có trong firestore -> Xóa trong authentication đi
+          getAuth().deleteUser(authResult.uid)
+          console.log('Account not found in firestore, deleted from authentication')
+          res.status(401).json(null)
+        }
+      })
+      .catch(() => {
+        console.log('Error while fetching account' + error)
+        res.status(401).json(null)
+      })
+  } catch (error) {
+    console.log('Account not found in authentication' + error)
+    res.status(401).json(null)
+  }
+})
 
+exports.getAccountByEmail = onRequest(async (req, res) => {
+  const email = req.query.email
+
+  try {
+    const docRef = getFirestore().collection('accounts').doc(email)
     await docRef
       .get()
       .then((result) => {
         if (result.exists) {
+          console.log('Account found in firestore')
           const targetAccount = result.data()
-          updateToken(account.email, account.token)
-          targetAccount.token = account.token
-          delete targetAccount.password
-          res.json(targetAccount)
+          res.status(200).json({ success: true, data: targetAccount, error: null })
         } else {
-          // Có trong authentication nhưng không có trong firestore -> Xóa trong authentication đi
-          getAuth().deleteUser(authResult.uid)
-          res.json(null)
+          res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại!' })
         }
       })
       .catch(() => {
-        res.json(null)
+        console.log('Error while fetching account' + error)
+        res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại!' })
       })
   } catch (error) {
-    res.json(null)
+    console.log('Account not found in authentication' + error)
+    res.status(500).json({ success: false, data: null, error: 'Lỗi server!' })
   }
 })
 
@@ -112,7 +147,6 @@ exports.updateAccount = onRequest(async (req, res) => {
     })
     .then((result) => {
       collectionRef.doc(account.email).set(account)
-      updateToken(account.email, account.token)
       res.json({
         success: true,
         error: null
@@ -131,14 +165,19 @@ exports.updateAccount = onRequest(async (req, res) => {
  * @param {string} token token to update
  */
 
-async function updateToken(email, token) {
-  const timestamp = Math.floor(Date.now() / 1000)
-  const tokenObject = {
-    token: token,
-    timestamp: timestamp
+async function updateToken(email, token, isOnline) {
+  const userRef = getFirestore().collection('accounts').doc(email)
+  try {
+    await userRef.update({
+      tokens: FieldValue.arrayUnion({ token: token, isOnline: isOnline })
+    })
+    console.log('Token added successfully')
+  } catch (error) {
+    console.error('Error updating document:', error)
+    throw new Error('Failed to add token')
   }
-  await getFirestore().collection('tokens').doc(email).set(tokenObject)
 }
+
 
 const sendMessageToRealtimeDb = async (message) => {
   try {
@@ -173,6 +212,38 @@ const sendMessageToRealtimeDb = async (message) => {
     console.error('Error writing data: ', error)
   }
 }
+
+exports.logout = onRequest(async (req, res) => {
+  const account = req.body
+  try {
+    // Get the user account
+    const userRef = getFirestore().collection('accounts').doc(account.email)
+    const userDoc = await userRef.get()
+    const userData = userDoc.data()
+
+    // Find the object with the token to remove
+    const tokenToRemove = userData.tokens.find((tokenObj) => tokenObj.token === account.token)
+
+    // Remove the object from the tokens array
+    if (tokenToRemove) {
+      await userRef.update({
+        tokens: FieldValue.arrayRemove(tokenToRemove)
+      })
+    }
+
+    res.status(200).json({ success: true, error: null })
+  } catch (error) {
+    console.error('Error updating document:', error)
+    res.status(500).json({ success: false, error: 'Failed to remove token' })
+  }
+})
+
+exports.addMessage = onRequest(async (req, res) => {
+  const msg = req.query.text
+  const result = await getFirestore().collection('messages').add({ message: msg })
+  res.json({ result: `MessageId: ${result.id}` })
+})
+
 
 exports.sendMessage = onRequest(async (req, res) => {
   let isSent = false
@@ -342,6 +413,7 @@ exports.getAllAccounts = async function () {
   return data
 }
 
+
 exports.getChat = onRequest(async (req, res) => {
   const sender = req.query.sender
   const receiver = req.query.receiver
@@ -361,6 +433,53 @@ exports.getChat = onRequest(async (req, res) => {
   })
   res.json(messages)
 })
+
+
+exports.getContactsOfAccount = onRequest(async (req, res) => {
+  const email = req.query.email
+  const token = req.query.token
+
+  try {
+    const isTokenValid = await checkToken(email, token)
+    if (isTokenValid) {
+      const userDoc = await getFirestore().collection('accounts').doc(email).get()
+      const contacts = userDoc.data().contacts
+
+      const data = []
+      // Get all contacts unique
+      for (const contactEmail of contacts) {
+        if (!data.includes(contactEmail)) {
+          const contactInfo = await getContactInfo(contactEmail)
+          if (contactInfo !== null) {
+            data.push({ email: contactEmail, displayName: contactInfo.displayName, imageUrl: contactInfo.imageUrl })
+          }
+        }
+      }
+
+      res.status(200).json({ success: true, data: data, error: null })
+    } else {
+      res.status(401).json({ success: false, data: null, error: 'Token is invalid' })
+    }
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
+
+async function getContactInfo(email) {
+  try {
+    const accountDoc = await getFirestore().collection('accounts').doc(email).get()
+    if (accountDoc.exists) {
+      const account = accountDoc.data()
+      return account
+    } else {
+      return null
+    }
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    return null
+  }
+}
 
 exports.getAllLastMessages = onRequest(async (req, res) => {
   const currentAccount = req.query.email
