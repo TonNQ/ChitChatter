@@ -16,6 +16,14 @@ const { error } = require('firebase-functions/logger')
 admin.initializeApp({ credential: admin.credential.applicationDefault() })
 setGlobalOptions({ maxInstances: 10 })
 
+// Tạo enum cho status
+const CONTACT_STATUS = {
+  CONNECTED: 'CONNECTED',
+  RECEIVED: 'RECEIVED', // Đã nhận yêu cầu kết bạn
+  REQUESTED: 'REQUESTED', // Đã gửi yêu cầu kết bạn
+  UNCONNECTED: 'UNCONNECTED'
+}
+
 exports.createAccountInFirestore = onRequest(async (req, res) => {
   const account = req.body
   const collectionRef = getFirestore().collection('accounts')
@@ -107,6 +115,53 @@ exports.getAccountByEmail = onRequest(async (req, res) => {
   } catch (error) {
     console.log('Account not found in authentication' + error)
     res.status(500).json({ success: false, data: null, error: 'Lỗi server!' })
+  }
+})
+
+exports.getContactAccount = onRequest(async (req, res) => {
+  const email = req.query.email
+  const contactEmail = req.query.contactEmail
+  const token = req.query.token
+
+  const isTokenValid = await checkToken(email, token)
+  if (!isTokenValid) {
+    res.status(401).json({ success: false, error: 'Token is invalid' })
+    return
+  }
+
+  try {
+    const result = await getFirestore().collection('accounts').doc(contactEmail).get()
+
+    if (!result.exists) {
+      return res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại!' })
+    }
+    const targetAccount = result.data()
+    const contact = targetAccount.contacts.includes(email)
+
+    if (contact) {
+      targetAccount.contactStatus = Object.keys(CONTACT_STATUS).indexOf(CONTACT_STATUS.CONNECTED)
+      return res.status(200).json({ success: true, data: targetAccount, error: null })
+    }
+
+    const requestContactRef = getFirestore().collection('request-contact').doc(`${email}_${contactEmail}`)
+    const requestContact = await requestContactRef.get()
+    if (requestContact.exists) {
+      targetAccount.contactStatus = Object.keys(CONTACT_STATUS).indexOf(CONTACT_STATUS.REQUESTED)
+      return res.status(200).json({ success: true, data: targetAccount, error: null })
+    }
+
+    const receivedContactRef = getFirestore().collection('request-contact').doc(`${contactEmail}_${email}`)
+    const receivedContact = await receivedContactRef.get()
+    if (receivedContact.exists) {
+      targetAccount.contactStatus = Object.keys(CONTACT_STATUS).indexOf(CONTACT_STATUS.RECEIVED)
+      return res.status(200).json({ success: true, data: targetAccount, error: null })
+    }
+
+    targetAccount.contactStatus = Object.keys(CONTACT_STATUS).indexOf(CONTACT_STATUS.UNCONNECTED)
+    return res.status(200).json({ success: true, data: targetAccount, error: null })
+  } catch (error) {
+    console.log('Error while fetching account' + error)
+    return res.status(500).json({ success: false, data: null, error: 'Lỗi server!' })
   }
 })
 
@@ -240,25 +295,110 @@ exports.getContactsOfAccount = onRequest(async (req, res) => {
 
   try {
     const isTokenValid = await checkToken(email, token)
-    if (isTokenValid) {
-      const userDoc = await getFirestore().collection('accounts').doc(email).get()
-      const contacts = userDoc.data().contacts
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
 
-      const data = []
-      // Get all contacts unique
-      for (const contactEmail of contacts) {
-        if (!data.includes(contactEmail)) {
-          const contactInfo = await getContactInfo(contactEmail)
-          if (contactInfo !== null) {
-            data.push({ email: contactEmail, displayName: contactInfo.displayName, imageUrl: contactInfo.imageUrl })
-          }
+    const userDoc = await getFirestore().collection('accounts').doc(email).get()
+    const contacts = userDoc.data().contacts
+
+    const data = []
+    // Get all contacts unique
+    for (const contactEmail of contacts) {
+      if (!data.includes(contactEmail)) {
+        const contactInfo = await getContactInfo(contactEmail)
+        if (contactInfo !== null) {
+          data.push({ email: contactEmail, displayName: contactInfo.displayName, imageUrl: contactInfo.imageUrl })
         }
       }
-
-      res.status(200).json({ success: true, data: data, error: null })
-    } else {
-      res.status(401).json({ success: false, data: null, error: 'Token is invalid' })
     }
+    res.status(200).json({ success: true, data: data, error: null })
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
+
+exports.searchContacts = onRequest(async (req, res) => {
+  const email = req.query.email
+  const token = req.query.token
+  let searchText = req.query.searchText
+
+  searchText = searchText.replace('@gmail.com', '')
+  try {
+    const isTokenValid = await checkToken(email, token)
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
+
+    // Lấy danh sách contacts của account
+    const accountDoc = await getFirestore().collection('accounts').doc(email).get() // Lấy document của account
+    const listContacts = accountDoc.data().contacts // Lấy danh sách contacts của account
+
+    // Lấy danh sách request-contact có sender là email
+    const requestContacts = await getFirestore().collection('request-contact').where('sender', '==', email).get()
+    const listRequests = requestContacts.docs.map((doc) => doc.data().receiver)
+
+    const receivedContacts = await getFirestore().collection('request-contact').where('receiver', '==', email).get()
+    const listReceived = receivedContacts.docs.map((doc) => doc.data().sender)
+
+    const listAccounts = [] // Danh sách account tìm được
+    // Kiểm tra xem document ID có contains searchText không
+    const accounts = await getFirestore().collection('accounts').get()
+    accounts.forEach((contact) => {
+      const contactData = contact.data()
+      // Sử dụng contact.id để lấy ID của document
+      const trimmedEmail = contactData.email.replace('@gmail.com', '')
+      if (contactData.email !== email && trimmedEmail.toLowerCase().includes(searchText.toLowerCase())) {
+        // Xác định quan hệ giữa account và contact
+        let contactStatus = CONTACT_STATUS.UNCONNECTED
+        if (listContacts.includes(contactData.email)) {
+          contactStatus = CONTACT_STATUS.CONNECTED
+        } else if (listRequests.includes(contactData.email)) {
+          contactStatus = CONTACT_STATUS.REQUESTED
+        } else if (listReceived.includes(contactData.email)) {
+          contactStatus = CONTACT_STATUS.RECEIVED
+        }
+
+        listAccounts.push({
+          email: contactData.email,
+          displayName: contactData.displayName,
+          imageUrl: contactData.imageUrl,
+          contactStatus: Object.keys(CONTACT_STATUS).indexOf(contactStatus)
+        })
+      }
+    })
+
+    // sắp xếp listAccounts theo thứ tự enum CONTACT_STATUS
+    listAccounts.sort((a, b) => {
+      return CONTACT_STATUS[b.status] - CONTACT_STATUS[a.status]
+    })
+    res.status(200).json({ success: true, data: listAccounts, error: null })
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
+
+exports.getContactRequests = onRequest(async (req, res) => {
+  const email = req.query.email
+  const token = req.query.token
+
+  try {
+    const isTokenValid = await checkToken(email, token)
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
+
+    const requestContacts = await getFirestore().collection('request-contact').where('receiver', '==', email).get()
+    const data = []
+    requestContacts.forEach((request) => {
+      data.push(request.data())
+    })
+    res.status(200).json({ success: true, data: data, error: null })
   } catch (error) {
     console.error('Error fetching account:', error)
     res.status(500).json({ success: false, data: null, error: 'Internal server error' })
