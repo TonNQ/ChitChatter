@@ -7,7 +7,6 @@ const { getAllAccounts } = require('./modules/accounts')
 // Firebase
 const { onRequest } = require('firebase-functions/v2/https')
 
-
 const admin = require('firebase-admin')
 const { getAuth } = require('firebase-admin/auth')
 const { getFirestore, Filter, FieldValue } = require('firebase-admin/firestore')
@@ -20,7 +19,6 @@ const { error } = require('firebase-functions/logger')
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() })
 setGlobalOptions({ maxInstances: 10 })
-
 
 const firestore = admin.firestore()
 firestore.settings({ ignoreUndefinedProperties: true })
@@ -42,7 +40,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 const firebaseDb = getDatabase(app)
 
-
 // Tạo enum cho status
 const CONTACT_STATUS = {
   CONNECTED: 'CONNECTED',
@@ -50,7 +47,6 @@ const CONTACT_STATUS = {
   REQUESTED: 'REQUESTED', // Đã gửi yêu cầu kết bạn
   UNCONNECTED: 'UNCONNECTED'
 }
-
 
 exports.createAccountInFirestore = onRequest(async (req, res) => {
   const account = req.body
@@ -235,7 +231,6 @@ async function updateToken(email, token, isOnline) {
     throw new Error('Failed to add token')
   }
 }
-
 
 const sendMessageToRealtimeDb = async (message) => {
   try {
@@ -483,7 +478,6 @@ exports.addMessage = onRequest(async (req, res) => {
   res.json({ result: `MessageId: ${result.id}` })
 })
 
-
 exports.sendMessage = onRequest(async (req, res) => {
   let isSent = false
   try {
@@ -652,7 +646,6 @@ exports.getAllAccounts = async function () {
   return data
 }
 
-
 exports.getChat = onRequest(async (req, res) => {
   const sender = req.query.sender
   const receiver = req.query.receiver
@@ -672,7 +665,6 @@ exports.getChat = onRequest(async (req, res) => {
   })
   res.json(messages)
 })
-
 
 exports.getContactsOfAccount = onRequest(async (req, res) => {
   const email = req.query.email
