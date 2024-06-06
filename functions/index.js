@@ -418,6 +418,18 @@ exports.addContact = onRequest(async (req, res) => {
         })
         if (isOnline) {
           sendContactRequestToRealtimeDB(userEmail, contactEmail)
+        } else {
+          // Loại bỏ các token không hợp lệ
+          const validTokens = tokensArray
+            .filter((token) => {
+              return typeof token.token === 'string' && token.token.trim() !== '' && !token.isOnline
+            })
+            .map((token) => token.token)
+
+          console.log('valid tokens for send request notification', validTokens)
+          if (validTokens.length > 0) {
+            sendContactRequest(userEmail, contactEmail, validTokens)
+          }
         }
         //         // Lấy các token FCM của người nhận
         // const receiverDoc = await getFirestore().collection('accounts').doc(message.receiver).get()
