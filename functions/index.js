@@ -958,3 +958,30 @@ async function checkToken(email, token) {
     return false
   }
 }
+
+exports.updateMessageStatus = onRequest(async (req, res) => {
+  const { id: messageId, status: messageStatus, email, token } = req.body
+  try {
+    const isTokenValid = await checkToken(email, token)
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
+    const messageRef = getFirestore().collection('messages').doc(messageId)
+    const messageDoc = await messageRef.get()
+
+    if (!messageDoc.exists) {
+      return res.status(404).json({ success: false, data: null, error: 'Message not found' })
+    }
+
+    if (messageDoc.data().receiver === email) {
+      await messageRef.update({ status: messageStatus })
+      res.json({ success: true, data: { id: messageId, status: messageStatus }, error: null })
+    } else {
+      res.status(400).json({ success: false, data: null, error: 'You can not update status of this message' })
+    }
+  } catch (error) {
+    console.error('Error updating message status:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
