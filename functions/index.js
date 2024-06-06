@@ -2,7 +2,7 @@
 /* eslint-disable require-jsdoc */
 /* eslint-disable no-invalid-this */
 const { formatTimestamp, parseDateString, displayTime } = require('./utils/utils')
-const { getAllAccounts } = require('./modules/accounts')
+const { getAllAccounts, getAccountInformationByEmail } = require('./modules/accounts')
 
 // Firebase
 const { onRequest } = require('firebase-functions/v2/https')
@@ -472,6 +472,86 @@ exports.deleteContact = onRequest(async (req, res) => {
   }
 })
 
+// exports.addMessage = onRequest(async (req, res) => {
+//   const msg = req.query.text
+//   const result = await getFirestore().collection('messages').add({ message: msg })
+//   res.json({ result: `MessageId: ${result.id}` })
+// })
+
+// exports.sendMessage = onRequest(async (req, res) => {
+//   let isSent = false
+//   try {
+//     const data = req.body
+//     const isTokenValid = await checkToken(data.sender, data.token)
+//     if (isTokenValid) {
+//       const message = {
+//         content: data.content || null,
+//         sender: data.sender || null,
+//         receiver: data.receiver || null,
+//         photoUrl: data.photoUrl || null,
+//         photoMimeType: data.photoMimeType || null,
+//         createdAt: new Date(),
+//         status: 1
+//       }
+
+//       // Kiểm tra các trường bắt buộc
+//       if (!message.content || !message.sender || !message.receiver) {
+//         res.status(400).json({ success: false, data: null, error: 'Thiếu các trường bắt buộc' })
+//         return
+//       }
+
+//       console.log('Constructed message:', message)
+
+//       // Lưu tin nhắn vào Firestore
+//       const firestoreDocRef = await getFirestore().collection('messages').add(message)
+//       message.id = firestoreDocRef.id
+//       message.createdAt = formatTimestamp(new Date(message.createdAt))
+
+//       // Trả về mã trạng thái 200 trước khi gửi thông báo
+//       res.status(200).json({ success: true, data: message, error: null })
+//       isSent = true
+
+//       // Lấy các token FCM của người nhận
+//       const receiverDoc = await getFirestore().collection('accounts').doc(message.receiver).get()
+//       if (!receiverDoc.exists) {
+//         console.error('Người nhận không tồn tại')
+//         res.status(400).json({ success: false, data: null, error: 'Người nhận không tồn tại' })
+//         return
+//       }
+
+//       const receiverData = receiverDoc.data()
+//       const fcmTokens = receiverData.tokens || []
+
+//       const isOnline = fcmTokens.some((token) => {
+//         return typeof token.token === 'string' && token.token.trim() !== '' && token.isOnline
+//       })
+//       if (isOnline) {
+//         sendMessageToRealtimeDb(message)
+//       } else {
+//         // Loại bỏ các token không hợp lệ
+//         const validTokens = fcmTokens
+//           .filter((token) => {
+//             return typeof token.token === 'string' && token.token.trim() !== '' && !token.isOnline
+//           })
+//           .map((token) => token.token)
+
+//         console.log(validTokens)
+//         if (validTokens.length > 0) {
+//           sendNotification(validTokens, data)
+//         }
+//       }
+//     } else {
+//       console.log('error token')
+//       res.status(400).json({ success: false, data: null, error: 'Token không hợp lệ' })
+//     }
+//   } catch (error) {
+//     console.error('Error:', error)
+//     if (!isSent) {
+//       res.status(500).json({ success: false, data: null, error: 'Lỗi máy chủ nội bộ' })
+//     }
+//   }
+// })
+
 exports.addMessage = onRequest(async (req, res) => {
   const msg = req.query.text
   const result = await getFirestore().collection('messages').add({ message: msg })
@@ -484,6 +564,8 @@ exports.sendMessage = onRequest(async (req, res) => {
     const data = req.body
     const isTokenValid = await checkToken(data.sender, data.token)
     if (isTokenValid) {
+      const accountInfo = await getAccountInformationByEmail(data.sender)
+      console.log(accountInfo)
       const message = {
         content: data.content || null,
         sender: data.sender || null,
@@ -491,7 +573,9 @@ exports.sendMessage = onRequest(async (req, res) => {
         photoUrl: data.photoUrl || null,
         photoMimeType: data.photoMimeType || null,
         createdAt: new Date(),
-        status: 1
+        status: 1,
+        name: accountInfo.displayName || null,
+        url: accountInfo.imageUrl || null
       }
 
       // Kiểm tra các trường bắt buộc

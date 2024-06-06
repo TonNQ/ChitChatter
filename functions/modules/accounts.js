@@ -9,6 +9,12 @@ const getAllAccounts = async function () {
   return data
 }
 
+const getAccountInformationByEmail = async function (email) {
+  const account = await getFirestore().collection('accounts').doc(email).get()
+  return account.data()
+}
+
 module.exports = {
-  getAllAccounts
+  getAllAccounts,
+  getAccountInformationByEmail
 }
