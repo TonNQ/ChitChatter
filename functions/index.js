@@ -195,26 +195,50 @@ exports.getContactAccount = onRequest(async (req, res) => {
 
 exports.updateAccount = onRequest(async (req, res) => {
   const account = req.body
-  const collectionRef = getFirestore().collection('accounts')
 
+  const isTokenValid = await checkToken(account.email, account.token)
+  if (!isTokenValid) {
+    res.status(401).json({ success: false, error: 'Token is invalid' })
+    return
+  }
+
+  const collectionRef = getFirestore().collection('accounts')
   await collectionRef
     .doc(account.email)
     .update({
       displayName: account.displayName,
-      age: account.age
+      birthday: account.birthday,
+      gender: account.gender
     })
     .then((result) => {
-      collectionRef.doc(account.email).set(account)
-      res.json({
-        success: true,
-        error: null
-      })
-    })
+      // collectionRef.doc(account.email).set(account)
+      res.status(200).json({ success: true, error: null })
+    }) // Add closing parenthesis here
     .catch(() => {
-      res.json({
-        success: false,
-        error: `Tài khoản với email "${account.email}" không tồn tại!`
-      })
+      res.status(500).json({ success: false, error: 'Internal server error' })
+    })
+})
+
+exports.updateAvatar = onRequest(async (req, res) => {
+  const account = req.body
+
+  const isTokenValid = await checkToken(account.email, account.token)
+  if (!isTokenValid) {
+    res.status(401).json({ success: false, error: 'Token is invalid' })
+    return
+  }
+
+  const collectionRef = getFirestore().collection('accounts')
+  await collectionRef
+    .doc(account.email)
+    .update({
+      imageUrl: account.imageUrl
+    })
+    .then((result) => {
+      res.status(200).json({ success: true, error: null })
+    }) // Add closing parenthesis here
+    .catch(() => {
+      res.status(500).json({ success: false, error: 'Internal server error' })
     })
 })
 
