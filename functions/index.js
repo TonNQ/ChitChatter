@@ -7,7 +7,6 @@ const { getAllAccounts } = require('./modules/accounts')
 // Firebase
 const { onRequest } = require('firebase-functions/v2/https')
 
-
 const admin = require('firebase-admin')
 const { getAuth } = require('firebase-admin/auth')
 const { getFirestore, Filter, FieldValue } = require('firebase-admin/firestore')
@@ -20,7 +19,6 @@ const { error } = require('firebase-functions/logger')
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() })
 setGlobalOptions({ maxInstances: 10 })
-
 
 const firestore = admin.firestore()
 firestore.settings({ ignoreUndefinedProperties: true })
@@ -42,7 +40,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 const firebaseDb = getDatabase(app)
 
-
 // Tạo enum cho status
 const CONTACT_STATUS = {
   CONNECTED: 'CONNECTED',
@@ -50,7 +47,6 @@ const CONTACT_STATUS = {
   REQUESTED: 'REQUESTED', // Đã gửi yêu cầu kết bạn
   UNCONNECTED: 'UNCONNECTED'
 }
-
 
 exports.createAccountInFirestore = onRequest(async (req, res) => {
   const account = req.body
@@ -260,6 +256,54 @@ async function updateToken(email, token, isOnline) {
   }
 }
 
+exports.getContactRequests = onRequest(async (req, res) => {
+  const email = req.query.email
+  const token = req.query.token
+
+  try {
+    const isTokenValid = await checkToken(email, token)
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
+
+    const requestContactsSnapshot = await getFirestore()
+      .collection('request-contact')
+      .where('receiver', '==', email)
+      .get()
+    const dataPromises = []
+
+    requestContactsSnapshot.forEach((requestDoc) => {
+      const sender = requestDoc.data().sender
+      const senderPromise = getFirestore()
+        .collection('accounts')
+        .doc(sender)
+        .get()
+        .then((senderDoc) => {
+          if (senderDoc.exists) {
+            const senderData = senderDoc.data()
+            return {
+              email: sender,
+              displayName: senderData.displayName,
+              imageUrl: senderData.imageUrl,
+              time: displayTime(formatTimestamp(requestDoc.data().time.toDate()))
+            }
+          }
+          return null
+        })
+      dataPromises.push(senderPromise)
+    })
+
+    const data = await Promise.all(dataPromises)
+    // Filter out any null values in case some sender docs did not exist
+    const filteredData = data.filter((item) => item !== null)
+
+    res.status(200).json({ success: true, data: filteredData, error: null })
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
 
 const sendMessageToRealtimeDb = async (message) => {
   try {
@@ -325,7 +369,6 @@ exports.addContact = onRequest(async (req, res) => {
   const userEmail = connection.sender
   const contactEmail = connection.receiver
   const token = connection.token
-  console.log(token)
 
   try {
     const isTokenValid = await checkToken(userEmail, token)
@@ -348,7 +391,8 @@ exports.addContact = onRequest(async (req, res) => {
         await getFirestore().collection('request-contact').doc(`${userEmail}_${contactEmail}`).set({
           sender: userEmail,
           receiver: contactEmail,
-          time: FieldValue.serverTimestamp()
+          time: FieldValue.serverTimestamp(),
+          isRead: false
         })
         // Send notification to contact
         const tokens = []
@@ -357,6 +401,8 @@ exports.addContact = onRequest(async (req, res) => {
           tokens.push(tokenObj.token)
         })
         sendContactRequest(userEmail, contactEmail, tokens)
+        // sendRequestNotificationRTDB(contactEmail)
+
         res.status(200).json({ success: true, error: null })
       } else {
         res.status(400).json({ success: false, error: 'Contact already exists' })
@@ -370,12 +416,93 @@ exports.addContact = onRequest(async (req, res) => {
   }
 })
 
+exports.countUnreadNotifications = onRequest(async (req, res) => {
+  const email = req.query.email
+  const token = req.query.token
+
+  try {
+    const isTokenValid = await checkToken(email, token)
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
+
+    const requestContactsSnapshot = await getFirestore()
+      .collection('request-contact')
+      .where('receiver', '==', email)
+      .where('isRead', '==', false)
+      .get()
+    const count = requestContactsSnapshot.size
+
+    res.status(200).json({ success: true, data: count, error: null })
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
+  }
+})
+
+exports.markAllAsRead = onRequest(async (req, res) => {
+  const email = req.body.email
+  const token = req.body.token
+
+  try {
+    const isTokenValid = await checkToken(email, token)
+    if (!isTokenValid) {
+      res.status(401).json({ success: false, error: 'Token is invalid' })
+      return
+    }
+
+    const requestContactsSnapshot = await getFirestore()
+      .collection('request-contact')
+      .where('receiver', '==', email)
+      .where('isRead', '==', false)
+      .get()
+
+    const batch = getFirestore().batch()
+    requestContactsSnapshot.forEach((doc) => {
+      const docRef = getFirestore().collection('request-contact').doc(doc.id)
+      batch.update(docRef, { isRead: true })
+    })
+
+    await batch.commit()
+    res.status(200).json({ success: true, error: null })
+  } catch (error) {
+    console.error('Error fetching account:', error)
+    res.status(500).json({ success: false, error: 'Internal server error' })
+  }
+})
+
+// async function sendRequestNotificationRTDB(contactEmail) {
+//   const db = admin.database()
+//   const notificationRef = db.ref(`notifications/${contactEmail}/count`)
+
+//   // Using transaction to ensure safe increment
+//   notificationRef.transaction(
+//     (currentCount) => {
+//       return (currentCount || 0) + 1
+//     },
+//     (error, committed, snapshot) => {
+//       if (error) {
+//         console.error('Transaction failed abnormally!', error)
+//       } else if (!committed) {
+//         console.log('Transaction not committed.')
+//       } else {
+//         console.log('Notification count incremented:', snapshot.val())
+//       }
+//     }
+//   )
+// }
+
 async function sendContactRequest(userEmail, contactEmail, tokens) {
   const messages = {
     tokens: tokens,
     notification: {
       title: 'Yêu cầu kết bạn',
       body: `Bạn có yêu cầu kết bạn từ ${userEmail}`
+    },
+    data: {
+      sender: userEmail,
+      receiver: contactEmail
     }
   }
 
@@ -506,7 +633,6 @@ exports.addMessage = onRequest(async (req, res) => {
   const result = await getFirestore().collection('messages').add({ message: msg })
   res.json({ result: `MessageId: ${result.id}` })
 })
-
 
 exports.sendMessage = onRequest(async (req, res) => {
   let isSent = false
@@ -676,7 +802,6 @@ exports.getAllAccounts = async function () {
   return data
 }
 
-
 exports.getChat = onRequest(async (req, res) => {
   const sender = req.query.sender
   const receiver = req.query.receiver
@@ -696,7 +821,6 @@ exports.getChat = onRequest(async (req, res) => {
   })
   res.json(messages)
 })
-
 
 exports.getContactsOfAccount = onRequest(async (req, res) => {
   const email = req.query.email
@@ -785,29 +909,6 @@ exports.searchContacts = onRequest(async (req, res) => {
       return a.contactStatus - b.contactStatus
     })
     res.status(200).json({ success: true, data: listAccounts, error: null })
-  } catch (error) {
-    console.error('Error fetching account:', error)
-    res.status(500).json({ success: false, data: null, error: 'Internal server error' })
-  }
-})
-
-exports.getContactRequests = onRequest(async (req, res) => {
-  const email = req.query.email
-  const token = req.query.token
-
-  try {
-    const isTokenValid = await checkToken(email, token)
-    if (!isTokenValid) {
-      res.status(401).json({ success: false, error: 'Token is invalid' })
-      return
-    }
-
-    const requestContacts = await getFirestore().collection('request-contact').where('receiver', '==', email).get()
-    const data = []
-    requestContacts.forEach((request) => {
-      data.push(request.data())
-    })
-    res.status(200).json({ success: true, data: data, error: null })
   } catch (error) {
     console.error('Error fetching account:', error)
     res.status(500).json({ success: false, data: null, error: 'Internal server error' })
