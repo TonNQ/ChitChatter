@@ -381,6 +381,33 @@ const sendContactRequestToRealtimeDB = async (sender, receiver) => {
   }
 }
 
+exports.removeContactRequestFromRealtimeDB = onRequest(async (req, res) => {
+  const receiver = req.query.receiver
+  const token = req.query.token
+
+  const isTokenValid = await checkToken(receiver, token)
+  if (!isTokenValid) {
+    res.status(401).json({ success: false, error: 'Token is invalid' })
+    return
+  }
+
+  try {
+    await removeContactRequestFromRealtimeDB(receiver)
+    res.status(200).json({ success: true, error: null })
+  } catch (error) {
+    console.error('Error removing contact request:', error)
+    res.status(500).json({ success: false, error: 'Internal server error' })
+  }
+})
+
+const removeContactRequestFromRealtimeDB = async (receiver) => {
+  const receiverUsername = receiver.split('@')[0]
+  const messagePath = `requestContact/${receiverUsername}`
+  const dbRef = ref(firebaseDb, messagePath)
+  await set(dbRef, null)
+  console.log('Remove request contact from realtime database successfully')
+}
+
 exports.addContact = onRequest(async (req, res) => {
   const connection = req.body
   const userEmail = connection.sender
@@ -505,8 +532,8 @@ exports.countUnreadNotifications = onRequest(async (req, res) => {
 })
 
 exports.markAllAsRead = onRequest(async (req, res) => {
-  const email = req.body.email
-  const token = req.body.token
+  const email = req.query.email
+  const token = req.query.token
 
   try {
     const isTokenValid = await checkToken(email, token)
