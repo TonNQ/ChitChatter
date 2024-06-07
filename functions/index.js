@@ -372,7 +372,6 @@ const sendContactRequestToRealtimeDB = async (sender, receiver) => {
       .get()
 
     await set(dbRef, {
-      from: sender,
       numOfUnreadNotifications: requestContactsSnapshot.size
     })
     console.log('Send request contact to realtime database successfully')
@@ -443,21 +442,17 @@ exports.addContact = onRequest(async (req, res) => {
         const isOnline = tokensArray.some((token) => {
           return typeof token.token === 'string' && token.token.trim() !== '' && token.isOnline
         })
+
         if (isOnline) {
           sendContactRequestToRealtimeDB(userEmail, contactEmail)
-        } else {
-          // Loại bỏ các token không hợp lệ
-          const validTokens = tokensArray
-            .filter((token) => {
-              return typeof token.token === 'string' && token.token.trim() !== '' && !token.isOnline
-            })
-            .map((token) => token.token)
-
-          console.log('valid tokens for send request notification', validTokens)
-          if (validTokens.length > 0) {
-            sendContactRequest(userEmail, contactEmail, validTokens)
-          }
         }
+        // Lấy ra token của người nhận
+        const validTokens = tokensArray.map((token) => token.token)
+        console.log('valid tokens for send request notification', validTokens)
+        if (tokensArray.length > 0) {
+          sendContactRequest(userEmail, contactEmail, validTokens)
+        }
+
         //         // Lấy các token FCM của người nhận
         // const receiverDoc = await getFirestore().collection('accounts').doc(message.receiver).get()
         // if (!receiverDoc.exists) {
@@ -591,13 +586,13 @@ async function sendContactRequest(userEmail, contactEmail, tokens) {
       body: `Bạn có yêu cầu kết bạn từ ${userEmail}`
     },
     data: {
-      sender: userEmail,
-      receiver: contactEmail
+      title: 'Yêu cầu kết bạn',
+      body: `Bạn có yêu cầu kết bạn từ ${userEmail}`
     }
   }
 
   try {
-    const response = await admin.messaging().sendEachForMulticast(messages)
+    const response = await admin.messaging().sendMulticast(messages)
     response.responses.forEach((resp, idx) => {
       if (resp.success) {
         console.log(`Successfully sent message to token: ${tokens[idx]}`)
