@@ -372,13 +372,39 @@ const sendContactRequestToRealtimeDB = async (sender, receiver) => {
       .get()
 
     await set(dbRef, {
-      from: sender,
       numOfUnreadNotifications: requestContactsSnapshot.size
     })
     console.log('Send request contact to realtime database successfully')
   } catch (error) {
     console.error('Error writing data: ', error)
   }
+}
+
+exports.removeContactRequestFromRealtimeDB = onRequest(async (req, res) => {
+  const receiver = req.query.receiver
+  const token = req.query.token
+
+  const isTokenValid = await checkToken(receiver, token)
+  if (!isTokenValid) {
+    res.status(401).json({ success: false, error: 'Token is invalid' })
+    return
+  }
+
+  try {
+    await removeContactRequestFromRealtimeDB(receiver)
+    res.status(200).json({ success: true, error: null })
+  } catch (error) {
+    console.error('Error removing contact request:', error)
+    res.status(500).json({ success: false, error: 'Internal server error' })
+  }
+})
+
+const removeContactRequestFromRealtimeDB = async (receiver) => {
+  const receiverUsername = receiver.split('@')[0]
+  const messagePath = `requestContact/${receiverUsername}`
+  const dbRef = ref(firebaseDb, messagePath)
+  await set(dbRef, null)
+  console.log('Remove request contact from realtime database successfully')
 }
 
 exports.addContact = onRequest(async (req, res) => {
@@ -416,21 +442,17 @@ exports.addContact = onRequest(async (req, res) => {
         const isOnline = tokensArray.some((token) => {
           return typeof token.token === 'string' && token.token.trim() !== '' && token.isOnline
         })
+
         if (isOnline) {
           sendContactRequestToRealtimeDB(userEmail, contactEmail)
-        } else {
-          // Loại bỏ các token không hợp lệ
-          const validTokens = tokensArray
-            .filter((token) => {
-              return typeof token.token === 'string' && token.token.trim() !== '' && !token.isOnline
-            })
-            .map((token) => token.token)
-
-          console.log('valid tokens for send request notification', validTokens)
-          if (validTokens.length > 0) {
-            sendContactRequest(userEmail, contactEmail, validTokens)
-          }
         }
+        // Lấy ra token của người nhận
+        const validTokens = tokensArray.map((token) => token.token)
+        console.log('valid tokens for send request notification', validTokens)
+        if (tokensArray.length > 0) {
+          sendContactRequest(userEmail, contactEmail, validTokens)
+        }
+
         //         // Lấy các token FCM của người nhận
         // const receiverDoc = await getFirestore().collection('accounts').doc(message.receiver).get()
         // if (!receiverDoc.exists) {
@@ -505,8 +527,8 @@ exports.countUnreadNotifications = onRequest(async (req, res) => {
 })
 
 exports.markAllAsRead = onRequest(async (req, res) => {
-  const email = req.body.email
-  const token = req.body.token
+  const email = req.query.email
+  const token = req.query.token
 
   try {
     const isTokenValid = await checkToken(email, token)
@@ -564,13 +586,13 @@ async function sendContactRequest(userEmail, contactEmail, tokens) {
       body: `Bạn có yêu cầu kết bạn từ ${userEmail}`
     },
     data: {
-      sender: userEmail,
-      receiver: contactEmail
+      title: 'Yêu cầu kết bạn',
+      body: `Bạn có yêu cầu kết bạn từ ${userEmail}`
     }
   }
 
   try {
-    const response = await admin.messaging().sendEachForMulticast(messages)
+    const response = await admin.messaging().sendMulticast(messages)
     response.responses.forEach((resp, idx) => {
       if (resp.success) {
         console.log(`Successfully sent message to token: ${tokens[idx]}`)
