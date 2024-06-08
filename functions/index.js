@@ -3,6 +3,46 @@
 /* eslint-disable no-invalid-this */
 const { formatTimestamp, parseDateString, displayTime } = require('./utils/utils')
 const { getAllAccounts, getAccountInformationByEmail } = require('./modules/accounts')
+// require('dotenv').config()
+const crypto = require('crypto')
+const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs/4hcaTUzTmeXtYomybJ
+E6qPNNPYOoYsfNMxoO01MKceDaHMZWXdpWL2Dx+vu+Es68SkMC+NtDENxbbflS7d
+RZDsD8gBioSgie543BvQbg92cQl1K54unvF+GmqS3Nk1Bj9H4giVrWnK2IQYgJxf
+oFr1tiSKXDTT1/ov6o5Of68c/oVMSqhGsnGlfMyXX0nuGG9jPQFkgtetpxBDIDdu
+9g9suc5BSgUnETF5exok4AuPkvsjdcg++w0FOBomCNvWs3IE4yJ+H4dBKni53BP/
+Yzg5s4YlSCHIqH8MOyb07c0uV8K8PSBPeV0dSw9b7KGMsQoNipOwtOY7kHQTqhvi
+wQIDAQAB
+-----END PUBLIC KEY-----`
+
+const PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCz/iFxpNTNOZ5e
+1iibJskTqo8009g6hix80zGg7TUwpx4NocxlZd2lYvYPH6+74SzrxKQwL420MQ3F
+tt+VLt1FkOwPyAGKhKCJ7njcG9BuD3ZxCXUrni6e8X4aapLc2TUGP0fiCJWtacrY
+hBiAnF+gWvW2JIpcNNPX+i/qjk5/rxz+hUxKqEaycaV8zJdfSe4Yb2M9AWSC162n
+EEMgN272D2y5zkFKBScRMXl7GiTgC4+S+yN1yD77DQU4GiYI29azcgTjIn4fh0Eq
+eLncE/9jODmzhiVIIciofww7JvTtzS5Xwrw9IE95XR1LD1vsoYyxCg2Kk7C05juQ
+dBOqG+LBAgMBAAECggEAAwsO3ZZpsRwl5PHQHkb8bsmiSP1tDqbr/KK+JnSsQrfv
+u93TZZe10ULBIfCpYF0bxdMoI7psxDIb51XtXpfYh4+FUq3fZ3bfJYz6sZZ0zTMi
+D7BsaeWL0z6xBIPgcFnNWfu+eRy17yTve8XIbWIFrW/lKC8Na5h1SEBf7AXtX4JC
+IqFHRnHSnLdnpct67toIlMAh3EnvUROpoWzcL9dt9j9r1l6GRP/WVk1THumFoUik
+ZuyeXX4GUBiNcFqkpSwUTdnkP0wsEjFulsKT2GAqVJhxpg0Dr3qVpGWtUuxjHWuo
+QafJ96vSG3UT2/CbaDmFXKNSg5fukaunps6wJE6A2QKBgQD99ZpBMxcz/YkrzWwW
+XyJ/f+p/in+SZdIWVLEgXw2qF51ctwzfbkM/Xel+y7Zqs7aFl6C+B4dBYWDXaG9G
+4LuUC0svK5k+6uVB+CgVcCX0NeuojpP5GjK6EY+BeO+KRVeYsf0Sxgm5AiijZVNc
+gAt/NO5cQUxsikT2b55zMH/TfQKBgQC1cGCzY2aTOvS9IH2WXyfiSqzR8ErMELRp
+SXQICUVILzTh97XgHR2jYmTthopTeLQXwGidcaet9IAlVfhLXMno9EVpVJuA3RUg
+5Ws2cl7ofK+pyg9h6Nfcf2YnPHmp4Le8PDeL/eHSWuYiJrovUCJSjaZk5a0W8ySA
+LemFPWDnlQKBgBw60ePPfxPLahURZ6Nw/c+4c2OsDJREdz7+ORZFGqq+p0JoIqkv
+g5Amq07p7CQeR/q/qSGWiqVs4qvvMvdpAdDqFHhw2z8QM13K7QG9Dqr/12tMNgyp
+qdvfGdmljNMM9DjICD6u/uOu5r+LAuI0ZZLFWn2s0Ib8M8BFFhLt4DetAoGANhf6
+DKGfDFgwbU6JgtJ93p6q5bCBbFOypg1LNbYl3L6OQqyKofWsR3DnbFWHWhmLf+VS
+i1Y+SsOxjPATpcxVOknRg/TAo+vGB9e+Xi49E41RBgsDCQrViJzHBP2nvDkOLmW5
+ndgkgoWtRRNMwRxgD0LCECTVtRjqkfiePaYuBP0CgYB9qmlFgWTa86/AHHHoyKB9
+D94Khme0PLgwuUVWNybixM5rLfXZuBiMjvv6MYVDK3pCQZFvu56/nj6em0G/dztF
+KoKSyIX88/XFPtaBVst3TDenRKe9Z2M+XWB59vdpj2dTDGHX1rbUHJcFy8Jqv83R
+/cJl1wMfVfKZtMUFzHDmnw==
+-----END PRIVATE KEY-----`
 
 // Firebase
 const { onRequest } = require('firebase-functions/v2/https')
@@ -51,14 +91,25 @@ const CONTACT_STATUS = {
 exports.createAccountInFirestore = onRequest(async (req, res) => {
   const account = req.body
   const collectionRef = getFirestore().collection('accounts')
-
+  // console.log(account)
   await collectionRef
     .doc(account.email)
     .get() // check if account existed
     .then((result) => {
       if (!result.exists) {
         // Add account if not existed
+        // rander key&iv for AES
+        const key = crypto.randomBytes(32)
+        const iv = crypto.randomBytes(16)
+        const keyString = key.toString('hex')
+        const ivString = iv.toString('hex')
+
+        account.key = keyString
+        account.iv = ivString
         collectionRef.doc(account.email).set(account)
+        // Xóa key, iv trước khi trả về
+        // delete account.key
+        // delete account.iv
         res.status(200).json({
           success: true,
           targetAccount: account,
@@ -72,12 +123,13 @@ exports.createAccountInFirestore = onRequest(async (req, res) => {
         })
       }
     })
-    .catch(() => {
+    .catch((error) => {
       res.status(500).json({
         success: false,
         targetAccount: null,
         error: 'Có lỗi xảy ra trong khi đăng ký tài khoản của bạn!'
       })
+      console.log('Error while fetching account' + error)
     })
 })
 
@@ -98,6 +150,21 @@ exports.getCurrentAccount = onRequest(async (req, res) => {
           updateToken(account.email, account.token, true)
           const targetAccount = result.data()
           delete targetAccount.password
+          // Mã hóa key, iv bằng PUBLIC_KEY
+          // console.log(targetAccount.key)
+          // console.log(targetAccount.iv)
+          // console.log(PUBLIC_KEY)
+
+          // const keyBuffer = Buffer.from(targetAccount.key, 'hex')
+          // const ivBuffer = Buffer.from(targetAccount.iv, 'hex')
+
+          // // Mã hóa key
+          // const encryptedKey = crypto.publicEncrypt(PUBLIC_KEY, keyBuffer).toString('hex')
+          // targetAccount.key = encryptedKey
+
+          // // Mã hóa iv
+          // const encryptedIv = crypto.publicEncrypt(PUBLIC_KEY, ivBuffer).toString('hex')
+          // targetAccount.iv = encryptedIv
           res.status(200).json(targetAccount)
         } else {
           // Có trong authentication nhưng không có trong firestore -> Xóa trong authentication đi
@@ -106,7 +173,7 @@ exports.getCurrentAccount = onRequest(async (req, res) => {
           res.status(401).json(null)
         }
       })
-      .catch(() => {
+      .catch((error) => {
         console.log('Error while fetching account' + error)
         res.status(401).json(null)
       })
@@ -115,6 +182,40 @@ exports.getCurrentAccount = onRequest(async (req, res) => {
     res.status(401).json(null)
   }
 })
+
+function encryptMessage(message, publicKey) {
+  // Tạo khóa AES và IV ngẫu nhiên
+  const aesKey = crypto.randomBytes(32) // AES-256
+  const iv = crypto.randomBytes(16)
+
+  // Mã hóa nội dung tin nhắn sử dụng AES
+  const cipher = crypto.createCipheriv('aes-256-cbc', aesKey, iv)
+  let encrypted = cipher.update(message, 'utf8', 'hex')
+  encrypted += cipher.final('hex')
+
+  // Mã hóa khóa AES sử dụng RSA
+  const encryptedKey = crypto.publicEncrypt(publicKey, aesKey).toString('base64')
+  const encryptedIv = crypto.publicEncrypt(publicKey, iv).toString('base64')
+
+  return { encrypted, encryptedKey, encryptedIv, message }
+}
+
+function decryptMessage(encryptedMessage, encryptedKey, encryptedIv, privateKey) {
+  // Giải mã khóa AES và IV sử dụng RSA
+  console.log(encryptedKey)
+  console.log(encryptedIv)
+
+  const aesKey = crypto.privateDecrypt(privateKey, Buffer.from(encryptedKey, 'base64'))
+  const iv = crypto.privateDecrypt(privateKey, Buffer.from(encryptedIv, 'base64'))
+
+  // Chuyển encryptedMessage
+  // Giải mã nội dung tin nhắn sử dụng AES
+  const decipher = crypto.createDecipheriv('aes-256-cbc', aesKey, iv)
+  let decrypted = decipher.update(encryptedMessage, 'hex', 'utf8')
+  decrypted += decipher.final('utf8')
+
+  return decrypted
+}
 
 exports.getAccountByEmail = onRequest(async (req, res) => {
   const email = req.query.email
@@ -127,6 +228,9 @@ exports.getAccountByEmail = onRequest(async (req, res) => {
         if (result.exists) {
           console.log('Account found in firestore')
           const targetAccount = result.data()
+          // Xóa key & iv
+          delete targetAccount.key
+          delete targetAccount.iv
           res.status(200).json({ success: true, data: targetAccount, error: null })
         } else {
           res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại!' })
@@ -160,6 +264,8 @@ exports.getContactAccount = onRequest(async (req, res) => {
       return res.status(404).json({ success: false, data: null, error: 'Tài khoản không tồn tại!' })
     }
     const targetAccount = result.data()
+    delete targetAccount.key
+    delete targetAccount.iv
     const contact = targetAccount.contacts.includes(email)
 
     if (contact) {
@@ -727,6 +833,17 @@ exports.sendMessage = onRequest(async (req, res) => {
     if (isTokenValid) {
       const accountInfo = await getAccountInformationByEmail(data.sender)
       console.log(accountInfo)
+      let key = null
+      let iv = null
+      let encryptedData = null
+      if (data.content !== null) {
+        data.content = encryptMessage(data.content, PUBLIC_KEY)
+        // Tách ra để lấy nội dung tin nhắn
+        key = data.content.encryptedKey
+        iv = data.content.encryptedIv
+        encryptedData = data.content.encrypted
+        data.content = data.content.message
+      }
       const message = {
         content: data.content || null,
         sender: data.sender || null,
@@ -736,7 +853,10 @@ exports.sendMessage = onRequest(async (req, res) => {
         createdAt: new Date(),
         status: 1,
         name: accountInfo.displayName || null,
-        url: accountInfo.imageUrl || null
+        url: accountInfo.imageUrl || null,
+        key: key,
+        iv: iv,
+        encryptedData: encryptedData
       }
 
       // Kiểm tra các trường bắt buộc
@@ -748,6 +868,8 @@ exports.sendMessage = onRequest(async (req, res) => {
       console.log('Constructed message:', message)
 
       // Lưu tin nhắn vào Firestore
+      const content = message.content
+      delete message.content // Xóa content để không lưu tin nhắn chưa mã hóa vào Firestore
       const firestoreDocRef = await getFirestore().collection('messages').add(message)
       message.id = firestoreDocRef.id
       message.createdAt = formatTimestamp(new Date(message.createdAt))
@@ -756,6 +878,8 @@ exports.sendMessage = onRequest(async (req, res) => {
       res.status(200).json({ success: true, data: message, error: null })
       isSent = true
 
+      // Thêm nội dung tin nhắn vào message
+      message.content = content
       // Lấy các token FCM của người nhận
       const receiverDoc = await getFirestore().collection('accounts').doc(message.receiver).get()
       if (!receiverDoc.exists) {
@@ -906,6 +1030,9 @@ exports.getChat = onRequest(async (req, res) => {
     const message = doc.data()
     const formattedTime = formatTimestamp(message.createdAt)
     message.formattedTime = formattedTime
+    if (message.encryptedData && message.key && message.iv) {
+      message.content = decryptMessage(message.encryptedData, message.key, message.iv, PRIVATE_KEY)
+    }
     messages.push(message)
   })
   res.json(messages)
